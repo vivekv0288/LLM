@@ -7,73 +7,6 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from torch.utils.data import Dataset
-# -----------------------------------------------------------------------------
-class CharDataset(Dataset):
-
-    def __init__(self, words, chars):
-        self.words = words
-        self.chars = chars
-        self.stoi = {ch:i for i,ch in enumerate(chars)}
-        self.itos = {i:s for s,i in self.stoi.items()} 
-
-    def __len__(self):
-        return len(self.words)
-
-    def contains(self, word):
-        return word in self.words
-
-    def get_vocab_size(self):
-        return len(self.chars) + 1 # all the possible characters and special 0 token
-
-    def encode(self, word):
-        ix = torch.tensor([self.stoi[w] for w in word], dtype=torch.long)
-        return ix
-
-    def decode(self, ix):
-        word = ''.join(self.itos[i] for i in ix)
-        return word
-
-    def __getitem__(self, idx):
-        word = self.words[idx]
-        ix = self.encode(word)
-        tkns= torch.tensor(ix, dtype=torch.long)#x, y
-        return tkns
-
-def create_datasets(input_file):
-
-    # preprocessing of the input text file
-    with open(input_file, 'r') as f:
-        data = f.read()
-    words = data.splitlines()
-    words = [w.strip() for w in words] # get rid of any leading or trailing white space
-    words = [w for w in words if w] # get rid of any empty strings
-    chars = sorted(list(set(''.join(words)))) # all the possible characters
-    max_word_length = max(len(w) for w in words)
-    print(f"number of examples in the dataset: {len(words)}")
-    print(f"max word length: {max_word_length}")
-    print(f"number of unique characters in the vocabulary: {len(chars)}")
-    print("vocabulary:")
-    print(''.join(chars))
-
-    # partition the input data into a training and the test set
-    test_set_size = min(10, int(len(words) * 0.001)) # 10% of the training set, or up to 1000 examples
-   
-    # rp = torch.randperm(len(words)).tolist()
-    # train_words = [words[i] for i in rp[:-test_set_size]]
-    # test_words = [words[i] for i in rp[-test_set_size:]]
-    # print(f"split up the dataset into {len(train_words)} training examples and {len(test_words)} test examples")
-
-    # wrap in dataset objects
-    train_dataset = CharDataset(words, chars)
-    # test_dataset = CharDataset(test_words, chars, max_word_length)
-    all_tokens=[]
-    for item in train_dataset.words:
-        all_tokens.append(train_dataset.encode(item)) 
-    merged_tokens = torch.cat(all_tokens, dim=0)
-
-    return merged_tokens
-
 class CausalSelfAttention(nn.Module):
 
     def __init__(self, config):
@@ -135,7 +68,7 @@ class Block(nn.Module):
 
 @dataclass
 class GPTConfig:
-    block_size: int = 128 # max sequence length
+    block_size: int = 256 # max sequence length
     vocab_size: int = 52 # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
     n_layer: int = 4 # number of layers
     n_head: int = 4 # number of heads
@@ -192,54 +125,54 @@ class GPT(nn.Module):
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
 
-    @classmethod
-    def from_pretrained(cls, model_type):
-        """Loads pretrained GPT-2 model weights from huggingface"""
-        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
-        from transformers import GPT2LMHeadModel
-        print("loading weights from pretrained gpt: %s" % model_type)
+    # @classmethod
+    # def from_pretrained(cls, model_type):
+    #     """Loads pretrained GPT-2 model weights from huggingface"""
+    #     assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
+    #     from transformers import GPT2LMHeadModel
+    #     print("loading weights from pretrained gpt: %s" % model_type)
 
-        # n_layer, n_head and n_embd are determined from model_type
-        config_args = {
-            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
-            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024), # 350M params
-            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280), # 774M params
-            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M params
-        }[model_type]
-        config_args['vocab_size'] = 50257 # always 50257 for GPT model checkpoints
-        config_args['block_size'] = 1024 # always 1024 for GPT model checkpoints
-        # create a from-scratch initialized minGPT model
-        config = GPTConfig(**config_args)
-        model = GPT(config)
-        sd = model.state_dict()
-        sd_keys = sd.keys()
-        sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')] # discard this mask / buffer, not a param
+    #     # n_layer, n_head and n_embd are determined from model_type
+    #     config_args = {
+    #         'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
+    #         'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024), # 350M params
+    #         'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280), # 774M params
+    #         'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M params
+    #     }[model_type]
+    #     config_args['vocab_size'] = 50257 # always 50257 for GPT model checkpoints
+    #     config_args['block_size'] = 1024 # always 1024 for GPT model checkpoints
+    #     # create a from-scratch initialized minGPT model
+    #     config = GPTConfig(**config_args)
+    #     model = GPT(config)
+    #     sd = model.state_dict()
+    #     sd_keys = sd.keys()
+    #     sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')] # discard this mask / buffer, not a param
 
-        # init a huggingface/transformers model
-        model_hf = GPT2LMHeadModel.from_pretrained(model_type)
-        sd_hf = model_hf.state_dict()
+    #     # init a huggingface/transformers model
+    #     model_hf = GPT2LMHeadModel.from_pretrained(model_type)
+    #     sd_hf = model_hf.state_dict()
 
-        # copy while ensuring all of the parameters are aligned and match in names and shapes
-        sd_keys_hf = sd_hf.keys()
-        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')] # ignore these, just a buffer
-        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')] # same, just the mask (buffer)
-        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
-        # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Linear
-        # this means that we have to transpose these weights when we import them
-        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
-        for k in sd_keys_hf:
-            if any(k.endswith(w) for w in transposed):
-                # special treatment for the Conv1D weights we need to transpose
-                assert sd_hf[k].shape[::-1] == sd[k].shape
-                with torch.no_grad():
-                    sd[k].copy_(sd_hf[k].t())
-            else:
-                # vanilla copy over the other parameters
-                assert sd_hf[k].shape == sd[k].shape
-                with torch.no_grad():
-                    sd[k].copy_(sd_hf[k])
+    #     # copy while ensuring all of the parameters are aligned and match in names and shapes
+    #     sd_keys_hf = sd_hf.keys()
+    #     sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')] # ignore these, just a buffer
+    #     sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')] # same, just the mask (buffer)
+    #     transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+    #     # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Linear
+    #     # this means that we have to transpose these weights when we import them
+    #     assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+    #     for k in sd_keys_hf:
+    #         if any(k.endswith(w) for w in transposed):
+    #             # special treatment for the Conv1D weights we need to transpose
+    #             assert sd_hf[k].shape[::-1] == sd[k].shape
+    #             with torch.no_grad():
+    #                 sd[k].copy_(sd_hf[k].t())
+    #         else:
+    #             # vanilla copy over the other parameters
+    #             assert sd_hf[k].shape == sd[k].shape
+    #             with torch.no_grad():
+    #                 sd[k].copy_(sd_hf[k])
 
-        return model
+    #     return model
 
     def configure_optimizers(self, weight_decay, learning_rate, device_type):
         # start with all of the candidate parameters (that require grad)
@@ -299,9 +232,9 @@ class DataLoaderLite:
     def reset(self):
         # state, init at shard zero
         self.current_shard = 0
+        self.tokens = load_tokens(self.shards[self.current_shard])
         # self.tokens = load_tokens(self.shards[self.current_shard])
-        self.tokens = create_datasets(self.shards[self.current_shard])
-        self.current_position = self.B * self.T * self.process_rank
+        self.current_position = 0#self.B * self.T * self.process_rank
 
     def next_batch(self):
         B, T = self.B, self.T
@@ -309,8 +242,16 @@ class DataLoaderLite:
         x = (buf[:-1]).view(B, T) # inputs
         y = (buf[1:]).view(B, T) # targets
         # advance the position in the tensor
-        self.current_position += B * T * self.num_processes
-
+        # print(f"Current Position: {self.current_position}")
+        
+        # if (self.current_position+((B*T)+1)) > 6750857:
+        self.current_position += B * T #* self.num_processes
+        
+        if (self.current_position + (B * T * self.num_processes + 1)) > len(self.tokens):
+            self.current_position = 0
+            
+        if self.current_position > 6750000:
+            print("currentpos")
         return x, y
 
 # -----------------------------------------------------------------------------
@@ -350,6 +291,19 @@ import torch.distributed as dist
 # set up DDP (distributed data parallel).
 # torchrun command sets the env variables RANK, LOCAL_RANK, and WORLD_SIZE
 ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
+
+def encode( word):
+        vocab='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+        stoi = {ch:i for i,ch in enumerate(vocab)}
+        itos = {i:s for s,i in stoi.items()} 
+        ix = torch.tensor([stoi[w] for w in word], dtype=torch.long)
+        return ix
+def decode( ix):
+        vocab='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+        stoi = {ch:i for i,ch in enumerate(vocab)}
+        itos = {i:s for s,i in stoi.items()}
+        word = ''.join(itos[i] for i in ix)
+        return word
 if ddp:
     # use of DDP atm demands CUDA, we set the device appropriately according to rank
     assert torch.cuda.is_available(), "for now i think we need CUDA for DDP"
@@ -383,9 +337,9 @@ device_type = "cuda" if device.startswith("cuda") else "cpu"
 
 # enc = tiktoken.get_encoding("gpt2")
 
-total_batch_size = 8192 # 2**19, ~0.5M, in number of tokens
-B = 8 # micro batch size
-T = 128 # sequence length
+total_batch_size = 32768 # 2**19, ~0.5M, in number of tokens
+B = 32 # micro batch size
+T = 256 # sequence length
 assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
 grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
 if master_process:
@@ -410,8 +364,8 @@ raw_model = model.module if ddp else model # always contains the "raw" unwrapped
 
 max_lr = 6e-4
 min_lr = max_lr * 0.1
-warmup_steps = 235
-max_steps = 6592 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+warmup_steps = 50
+max_steps = 206*10 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
 def get_lr(it):
     # 1) linear warmup for warmup_iters steps
     if it < warmup_steps:
@@ -506,40 +460,40 @@ for step in range(max_steps):
     #             f.write(f"{step} hella {acc_norm:.4f}\n")
 
     # once in a while generate from the model (except step 0, which is noise)
-    # if ((step > 0 and step % 250 == 0) or last_step) and (not use_compile):
-    #     model.eval()
-    #     num_return_sequences = 4
-    #     max_length = 32
-    #     tokens = enc.encode("Hello, I'm a language model,")
-    #     tokens = torch.tensor(tokens, dtype=torch.long)
-    #     tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
-    #     xgen = tokens.to(device)
-    #     sample_rng = torch.Generator(device=device)
-    #     sample_rng.manual_seed(42 + ddp_rank)
-    #     while xgen.size(1) < max_length:
-    #         # forward the model to get the logits
-    #         with torch.no_grad():
-    #             with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-    #                 logits, loss = model(xgen) # (B, T, vocab_size)
-    #             # take the logits at the last position
-    #             logits = logits[:, -1, :] # (B, vocab_size)
-    #             # get the probabilities
-    #             probs = F.softmax(logits, dim=-1)
-    #             # do top-k sampling of 50 (huggingface pipeline default)
-    #             # topk_probs here becomes (5, 50), topk_indices is (5, 50)
-    #             topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
-    #             # select a token from the top-k probabilities
-    #             # note: multinomial does not demand the input to sum to 1
-    #             ix = torch.multinomial(topk_probs, 1, generator=sample_rng) # (B, 1)
-    #             # gather the corresponding indices
-    #             xcol = torch.gather(topk_indices, -1, ix) # (B, 1)
-    #             # append to the sequence
-    #             xgen = torch.cat((xgen, xcol), dim=1)
-    #     # print the generated text
-    #     for i in range(num_return_sequences):
-    #         tokens = xgen[i, :max_length].tolist()
-    #         decoded = enc.decode(tokens)
-    #         print(f"rank {ddp_rank} sample {i}: {decoded}")
+    if ((step > 0 and step % 50 == 0) or last_step) and (not use_compile):
+        model.eval()
+        num_return_sequences = 4
+        max_length = 32
+        tokens =  encode("RamShyam")
+        tokens = torch.tensor(tokens, dtype=torch.long)
+        tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
+        xgen = tokens.to(device)
+        sample_rng = torch.Generator(device=device)
+        sample_rng.manual_seed(42 + ddp_rank)
+        while xgen.size(1) < max_length:
+            # forward the model to get the logits
+            with torch.no_grad():
+                with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+                    logits, loss = model(xgen) # (B, T, vocab_size)
+                # take the logits at the last position
+                logits = logits[:, -1, :] # (B, vocab_size)
+                # get the probabilities
+                probs = F.softmax(logits, dim=-1)
+                # do top-k sampling of 50 (huggingface pipeline default)
+                # topk_probs here becomes (5, 50), topk_indices is (5, 50)
+                topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
+                # select a token from the top-k probabilities
+                # note: multinomial does not demand the input to sum to 1
+                ix = torch.multinomial(topk_probs, 1, generator=sample_rng) # (B, 1)
+                # gather the corresponding indices
+                xcol = torch.gather(topk_indices, -1, ix) # (B, 1)
+                # append to the sequence
+                xgen = torch.cat((xgen, xcol), dim=1)
+        # print the generated text
+        for i in range(num_return_sequences):
+            tokens = xgen[i, :max_length].tolist()
+            decoded = decode(tokens)
+            print(f"rank {ddp_rank} sample {i}: {decoded}")
 
     # do one step of the optimization
     model.train()
