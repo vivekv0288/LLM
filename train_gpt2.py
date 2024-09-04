@@ -218,7 +218,7 @@ class DataLoaderLite:
         assert split in {'train', 'val'}
 
         # get the shard filenames
-        data_root = "babynames"
+        data_root = "babynames/data_tokens"
         shards = os.listdir(data_root)
         shards = [s for s in shards if split in s]
         shards = sorted(shards)
@@ -250,8 +250,6 @@ class DataLoaderLite:
         if (self.current_position + (B * T * self.num_processes + 1)) > len(self.tokens):
             self.current_position = 0
             
-        if self.current_position > 6750000:
-            print("currentpos")
         return x, y
 
 # -----------------------------------------------------------------------------
@@ -347,7 +345,7 @@ if master_process:
     print(f"=> calculated gradient accumulation steps: {grad_accum_steps}")
 
 train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train")
-# val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val")
+val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val")
 
 torch.set_float32_matmul_precision('high')
 
@@ -394,37 +392,37 @@ for step in range(max_steps):
     last_step = (step == max_steps - 1)
 
     # once in a while evaluate our validation loss
-    # if step % 250 == 0 or last_step:
-    #     model.eval()
-    #     val_loader.reset()
-    #     with torch.no_grad():
-    #         val_loss_accum = 0.0
-    #         val_loss_steps = 20
-    #         for _ in range(val_loss_steps):
-    #             x, y = val_loader.next_batch()
-    #             x, y = x.to(device), y.to(device)
-    #             with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-    #                 logits, loss = model(x, y)
-    #             loss = loss / val_loss_steps
-    #             val_loss_accum += loss.detach()
-    #     if ddp:
-    #         dist.all_reduce(val_loss_accum, op=dist.ReduceOp.AVG)
-    #     if master_process:
-    #         print(f"validation loss: {val_loss_accum.item():.4f}")
-    #         with open(log_file, "a") as f:
-    #             f.write(f"{step} val {val_loss_accum.item():.4f}\n")
-    #         if step > 0 and (step % 5000 == 0 or last_step):
-    #             # optionally write model checkpoints
-    #             checkpoint_path = os.path.join(log_dir, f"model_{step:05d}.pt")
-    #             checkpoint = {
-    #                 'model': raw_model.state_dict(),
-    #                 'config': raw_model.config,
-    #                 'step': step,
-    #                 'val_loss': val_loss_accum.item()
-    #             }
-    #             # you might also want to add optimizer.state_dict() and
-    #             # rng seeds etc., if you wanted to more exactly resume training
-    #             torch.save(checkpoint, checkpoint_path)
+    if step % 50 == 0 or last_step:
+        model.eval()
+        val_loader.reset()
+        with torch.no_grad():
+            val_loss_accum = 0.0
+            val_loss_steps = 20
+            for _ in range(val_loss_steps):
+                x, y = val_loader.next_batch()
+                x, y = x.to(device), y.to(device)
+                with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+                    logits, loss = model(x, y)
+                loss = loss / val_loss_steps
+                val_loss_accum += loss.detach()
+        if ddp:
+            dist.all_reduce(val_loss_accum, op=dist.ReduceOp.AVG)
+        if master_process:
+            print(f"validation loss: {val_loss_accum.item():.4f}")
+            with open(log_file, "a") as f:
+                f.write(f"{step} val {val_loss_accum.item():.4f}\n")
+            if step > 0 and (step % 50 == 0 or last_step):
+                # optionally write model checkpoints
+                checkpoint_path = os.path.join(log_dir, f"model_{step:05d}.pt")
+                checkpoint = {
+                    'model': raw_model.state_dict(),
+                    'config': raw_model.config,
+                    'step': step,
+                    'val_loss': val_loss_accum.item()
+                }
+                # you might also want to add optimizer.state_dict() and
+                # rng seeds etc., if you wanted to more exactly resume training
+                torch.save(checkpoint, checkpoint_path)
 
     # # once in a while evaluate hellaswag
     # if (step % 250 == 0 or last_step) and (not use_compile):

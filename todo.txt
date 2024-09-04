@@ -1,2 +1,6 @@
 Improve result of babynames
 limitation/reasons???, why is it not generating good names
+------------------------
+Sep-03-2024
+1) Pass names randomly
+2) Single name at a Time
