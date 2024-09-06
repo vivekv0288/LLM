@@ -291,13 +291,13 @@ import torch.distributed as dist
 ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
 
 def encode( word):
-        vocab='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+        vocab='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.'
         stoi = {ch:i for i,ch in enumerate(vocab)}
         itos = {i:s for s,i in stoi.items()} 
         ix = torch.tensor([stoi[w] for w in word], dtype=torch.long)
         return ix
 def decode( ix):
-        vocab='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+        vocab='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.'
         stoi = {ch:i for i,ch in enumerate(vocab)}
         itos = {i:s for s,i in stoi.items()}
         word = ''.join(itos[i] for i in ix)
@@ -350,7 +350,7 @@ val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_w
 torch.set_float32_matmul_precision('high')
 
 # create model
-model = GPT(GPTConfig(vocab_size=52))
+model = GPT(GPTConfig())
 # model = GPT.from_pretrained("gpt2") # or init from OpenAI GPT-2
 model.to(device)
 use_compile = False # torch.compile interferes with HellaSwag eval and Generation. TODO fix
