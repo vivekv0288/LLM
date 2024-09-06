@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import random
 
 class CausalSelfAttention(nn.Module):
 
@@ -348,22 +349,38 @@ train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp
 val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val")
 
 torch.set_float32_matmul_precision('high')
-
-# create model
-model = GPT(GPTConfig())
-# model = GPT.from_pretrained("gpt2") # or init from OpenAI GPT-2
-model.to(device)
-use_compile = False # torch.compile interferes with HellaSwag eval and Generation. TODO fix
-if use_compile:
-    model = torch.compile(model)
-if ddp:
-    model = DDP(model, device_ids=[ddp_local_rank])
+checkpoint_path = 'log/model.pt'
+trained_step = 0
+if os.path.exists(checkpoint_path):
+        # Load the checkpoint
+        checkpoint = torch.load(checkpoint_path)
+        
+        # Initialize the model using the configuration saved in the checkpoint
+        model = GPT(checkpoint['config'])
+        
+        # Load the saved state dict into the model
+        model.load_state_dict(checkpoint['model'])
+        model.to(device)
+        use_compile = False
+        # Optionally, retrieve the training step to continue from where it left off
+        trained_step = checkpoint['step']
+        
+else:
+    # create model
+    model = GPT(GPTConfig())
+    # model = GPT.from_pretrained("gpt2") # or init from OpenAI GPT-2
+    model.to(device)
+    use_compile = False # torch.compile interferes with HellaSwag eval and Generation. TODO fix
+    if use_compile:
+        model = torch.compile(model)
+    if ddp:
+        model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module if ddp else model # always contains the "raw" unwrapped model
 
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 50
-max_steps = 206*10 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+max_steps = trained_step + 206 *10# 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
 def get_lr(it):
     # 1) linear warmup for warmup_iters steps
     if it < warmup_steps:
@@ -387,42 +404,42 @@ log_file = os.path.join(log_dir, f"log.txt")
 with open(log_file, "w") as f: # open for writing to clear the file
     pass
 
-for step in range(max_steps):
+for step in range(trained_step+1,max_steps):
     t0 = time.time()
     last_step = (step == max_steps - 1)
 
-    # # once in a while evaluate our validation loss
-    # if step % 50 == 0 or last_step:
-    #     model.eval()
-    #     val_loader.reset()
-    #     with torch.no_grad():
-    #         val_loss_accum = 0.0
-    #         val_loss_steps = 20
-    #         for _ in range(val_loss_steps):
-    #             x, y = val_loader.next_batch()
-    #             x, y = x.to(device), y.to(device)
-    #             with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-    #                 logits, loss = model(x, y)
-    #             loss = loss / val_loss_steps
-    #             val_loss_accum += loss.detach()
-    #     if ddp:
-    #         dist.all_reduce(val_loss_accum, op=dist.ReduceOp.AVG)
-    #     if master_process:
-    #         print(f"validation loss: {val_loss_accum.item():.4f}")
-    #         with open(log_file, "a") as f:
-    #             f.write(f"{step} val {val_loss_accum.item():.4f}\n")
-    #         if step > 0 and (step % 50 == 0 or last_step):
-    #             # optionally write model checkpoints
-    #             checkpoint_path = os.path.join(log_dir, f"model_{step:05d}.pt")
-    #             checkpoint = {
-    #                 'model': raw_model.state_dict(),
-    #                 'config': raw_model.config,
-    #                 'step': step,
-    #                 'val_loss': val_loss_accum.item()
-    #             }
-    #             # you might also want to add optimizer.state_dict() and
-    #             # rng seeds etc., if you wanted to more exactly resume training
-    #             torch.save(checkpoint, checkpoint_path)
+    # once in a while evaluate our validation loss
+    if step % 50 == 0 or last_step:
+        model.eval()
+        val_loader.reset()
+        with torch.no_grad():
+            val_loss_accum = 0.0
+            val_loss_steps = 20
+            for _ in range(val_loss_steps):
+                x, y = val_loader.next_batch()
+                x, y = x.to(device), y.to(device)
+                with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+                    logits, loss = model(x, y)
+                loss = loss / val_loss_steps
+                val_loss_accum += loss.detach()
+        if ddp:
+            dist.all_reduce(val_loss_accum, op=dist.ReduceOp.AVG)
+        if master_process:
+            print(f"validation loss: {val_loss_accum.item():.4f}")
+            with open(log_file, "a") as f:
+                f.write(f"{step} val {val_loss_accum.item():.4f}\n")
+            # if step > 0 and (step % 50 == 0 or last_step):
+            #     # optionally write model checkpoints
+            #     checkpoint_path = os.path.join(log_dir, f"model_{step:05d}.pt")
+            #     checkpoint = {
+            #         'model': raw_model.state_dict(),
+            #         'config': raw_model.config,
+            #         'step': step,
+            #         'val_loss': val_loss_accum.item()
+            #     }
+            #     # you might also want to add optimizer.state_dict() and
+            #     # rng seeds etc., if you wanted to more exactly resume training
+            #     torch.save(checkpoint, checkpoint_path)
 
     # # once in a while evaluate hellaswag
     # if (step % 250 == 0 or last_step) and (not use_compile):
@@ -462,7 +479,8 @@ for step in range(max_steps):
         model.eval()
         num_return_sequences = 4
         max_length = 16
-        tokens =  encode("R")
+        random_number = random.randint(0, 25)
+        tokens =  random_number#encode("R")
         tokens = torch.tensor(tokens, dtype=torch.long)
         tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
         xgen = tokens.to(device)
@@ -530,6 +548,16 @@ for step in range(max_steps):
         print(f"step {step:5d} | loss: {loss_accum.item():.6f} | lr {lr:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
         with open(log_file, "a") as f:
             f.write(f"{step} train {loss_accum.item():.6f}\n")
+    if last_step:
+        checkpoint_path = os.path.join(log_dir, f"model.pt")
+        checkpoint = {
+            'model': raw_model.state_dict(),
+            'config': raw_model.config,
+            'step': step
+        }
+        # you might also want to add optimizer.state_dict() and
+        # rng seeds etc., if you wanted to more exactly resume training
+        torch.save(checkpoint, checkpoint_path)
 
 if ddp:
     destroy_process_group()
