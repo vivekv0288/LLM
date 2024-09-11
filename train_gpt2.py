@@ -108,12 +108,15 @@ class GPT(nn.Module):
 
     def forward(self, idx, targets=None):
         # idx is of shape (B, T)
+        #1, 256
         B, T = idx.size()
         assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
         # forward the token and posisition embeddings
         pos = torch.arange(0, T, dtype=torch.long, device=idx.device) # shape (T)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (T, n_embd)
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (B, T, n_embd)
+        #1,256,768
+        
         x = tok_emb + pos_emb
         # forward the blocks of the transformer
         for block in self.transformer.h:
@@ -336,9 +339,9 @@ device_type = "cuda" if device.startswith("cuda") else "cpu"
 
 # enc = tiktoken.get_encoding("gpt2")
 
-total_batch_size = 32768 # 2**19, ~0.5M, in number of tokens
-B = 512 # micro batch size
-T = 16 # sequence length
+total_batch_size = 65536 # 2**19, ~0.5M, in number of tokens
+B = 256 # micro batch size
+T = 64 # sequence length
 assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
 grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
 if master_process:
@@ -380,7 +383,7 @@ raw_model = model.module if ddp else model # always contains the "raw" unwrapped
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 50
-max_steps = trained_step + 206 *10# 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+max_steps = trained_step + 113 *10# 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
 def get_lr(it):
     # 1) linear warmup for warmup_iters steps
     if it < warmup_steps:
