@@ -69,11 +69,11 @@ class Block(nn.Module):
 
 @dataclass
 class GPTConfig:
-    block_size: int = 256 # max sequence length
+    block_size: int = 64 # max sequence length
     vocab_size: int = 53 # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
     n_layer: int = 4 # number of layers
     n_head: int = 4 # number of heads
-    n_embd: int = 32 # embedding dimension
+    n_embd: int = 64 # embedding dimension
 
 class GPT(nn.Module):
 
@@ -481,9 +481,9 @@ for step in range(trained_step+1,max_steps):
     if ((step > 0 and step % 50 == 0) or last_step) and (not use_compile):
         model.eval()
         num_return_sequences = 4
-        max_length = 16
+        max_length = 64
         random_number = random.randint(0, 25)
-        tokens =  random_number#encode("R")
+        tokens =  [52, random_number]#encode("R")
         tokens = torch.tensor(tokens, dtype=torch.long)
         tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
         xgen = tokens.to(device)
@@ -520,6 +520,12 @@ for step in range(trained_step+1,max_steps):
     loss_accum = 0.0
     for micro_step in range(grad_accum_steps):
         x, y = train_loader.next_batch()
+        if ((step > 0 and step % 100 == 0) or last_step):
+            numpy_array = x[0].numpy()
+            print(f"numpy_array : {numpy_array}")
+            decoded_train = decode(numpy_array)
+            print(f"Training Data : {decoded_train}")
+            
         x, y = x.to(device), y.to(device)
         # added after video, this field is also used by the forward pass.
         if ddp:
