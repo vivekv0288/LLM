@@ -1,7 +1,0 @@
-
---Date 30-08-2024
-1) Save tokens in file instead of text
-2) Generate text in between
-3) Draw graps
-4) How to save model
-5) how to decide the size of embeddings and context length

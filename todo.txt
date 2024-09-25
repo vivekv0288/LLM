@@ -1,6 +1,9 @@
 Improve result of babynames
 limitation/reasons???, why is it not generating good names
 ------------------------
-Sep-03-2024
-1) Pass names randomly
-2) Single name at a Time
+Sep-23-2024
+1) generate tokens
+2) train model
+3) generate from model
+4) validate model
+

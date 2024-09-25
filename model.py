@@ -80,7 +80,7 @@ class GPTConfig:
     n_head: int = config.n_head # number of heads
     n_embd: int = config.n_embd # embedding dimension
 
-class GPT(nn.Module):
+class GPT(nn.Module): #Generative Pre-trained Transformer
 
     def __init__(self, config):
         super().__init__()
