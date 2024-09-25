@@ -1,7 +1,6 @@
 import os
 import math
 import time
-import inspect
 from dataclasses import dataclass
 import torch
 import torch.nn as nn
@@ -10,13 +9,6 @@ import random
 import config
 from model import GPTConfig
 from model import GPT
-from model import CausalSelfAttention
-from model import MLP
-from model import Block
-
-
-# -----------------------------------------------------------------------------
-import tiktoken
 import numpy as np
 
 def load_tokens(filename):

@@ -1,10 +1,10 @@
 
-from tokenizer import CharDataset
+from tokenizer import generate_tokens
 import config
 
 def main():
-    CharDataset(config.train_file_name) #generate tokens for training
-    CharDataset(config.val_file_name) #generate tokens for validation
+    generate_tokens() #generate tokens for training
+    # CharDataset(confikg.val_file_name) #generate tokens for validation
     
     
     
